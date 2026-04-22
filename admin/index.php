@@ -18,21 +18,21 @@ $total_balita = $pdo->query("SELECT COUNT(*) FROM data_balita")->fetchColumn();
 // Total Pemeriksaan
 $total_pemeriksaan = $pdo->query("SELECT COUNT(*) FROM riwayat_klasifikasi")->fetchColumn();
 
-// Menghitung Jumlah per Kategori Status Gizi
+// Menghitung Jumlah per Kategori Status Gizi (Disesuaikan dengan Label WHO)
 $stmt_status = $pdo->query("
     SELECT 
-        SUM(CASE WHEN LOWER(hasil_klasifikasi) LIKE '%normal%' OR LOWER(hasil_klasifikasi) LIKE '%baik%' THEN 1 ELSE 0 END) as normal,
-        SUM(CASE WHEN LOWER(hasil_klasifikasi) LIKE '%kurang%' OR LOWER(hasil_klasifikasi) LIKE '%underweight%' THEN 1 ELSE 0 END) as kurang,
-        SUM(CASE WHEN LOWER(hasil_klasifikasi) LIKE '%buruk%' OR LOWER(hasil_klasifikasi) LIKE '%stunt%' THEN 1 ELSE 0 END) as buruk,
-        SUM(CASE WHEN LOWER(hasil_klasifikasi) LIKE '%lebih%' OR LOWER(hasil_klasifikasi) LIKE '%obesitas%' THEN 1 ELSE 0 END) as lebih
+        SUM(CASE WHEN LOWER(hasil_klasifikasi) LIKE '%normal%' THEN 1 ELSE 0 END) as normal,
+        SUM(CASE WHEN LOWER(hasil_klasifikasi) = 'stunted' OR (LOWER(hasil_klasifikasi) LIKE '%stunted%' AND LOWER(hasil_klasifikasi) NOT LIKE '%severely%') OR LOWER(hasil_klasifikasi) LIKE '%kurang%' THEN 1 ELSE 0 END) as stunted,
+        SUM(CASE WHEN LOWER(hasil_klasifikasi) LIKE '%severely stunted%' OR LOWER(hasil_klasifikasi) LIKE '%buruk%' THEN 1 ELSE 0 END) as severely_stunted,
+        SUM(CASE WHEN LOWER(hasil_klasifikasi) LIKE '%tinggi%' OR LOWER(hasil_klasifikasi) LIKE '%lebih%' THEN 1 ELSE 0 END) as tinggi
     FROM riwayat_klasifikasi
 ");
 $status_counts = $stmt_status->fetch(PDO::FETCH_ASSOC);
 
 $jml_normal = $status_counts['normal'] ?? 0;
-$jml_kurang = $status_counts['kurang'] ?? 0;
-$jml_buruk  = $status_counts['buruk'] ?? 0;
-$jml_lebih  = $status_counts['lebih'] ?? 0;
+$jml_stunted = $status_counts['stunted'] ?? 0;
+$jml_severely_stunted  = $status_counts['severely_stunted'] ?? 0;
+$jml_tinggi  = $status_counts['tinggi'] ?? 0;
 
 
 // =========================================================
@@ -52,7 +52,7 @@ $sql_kab = "
     SELECT 
         b.kabupaten,
         COUNT(rk.id) as total_periksa,
-        SUM(CASE WHEN LOWER(rk.hasil_klasifikasi) LIKE '%buruk%' OR LOWER(rk.hasil_klasifikasi) LIKE '%stunt%' THEN 1 ELSE 0 END) as total_stunting
+        SUM(CASE WHEN LOWER(rk.hasil_klasifikasi) LIKE '%stunt%' OR LOWER(rk.hasil_klasifikasi) LIKE '%buruk%' THEN 1 ELSE 0 END) as total_stunting
     FROM riwayat_klasifikasi rk
     JOIN data_balita b ON rk.id_balita = b.id
     WHERE b.kabupaten IS NOT NULL AND b.kabupaten != '' AND b.kabupaten != 'Belum diisi'
@@ -73,12 +73,11 @@ foreach($data_db_kab as $row) {
 // Siapkan array data persentase untuk dilempar ke Grafik ApexCharts
 $data_persentase_kab = [];
 foreach($list_kabupaten as $kab) {
-    // Jika ada datanya dan total periksa lebih dari 0
     if(isset($kab_stats[$kab]) && $kab_stats[$kab]['periksa'] > 0) {
         $persen = ($kab_stats[$kab]['stunting'] / $kab_stats[$kab]['periksa']) * 100;
-        $data_persentase_kab[] = round($persen, 1); // Bulatkan 1 angka di belakang koma (misal: 14.5)
+        $data_persentase_kab[] = round($persen, 1); 
     } else {
-        $data_persentase_kab[] = 0; // Jika belum ada pasien dari kabupaten ini, persentase 0%
+        $data_persentase_kab[] = 0; 
     }
 }
 
@@ -136,7 +135,7 @@ include 'layouts/sidebar.php';
             <div class="absolute -right-4 -top-4 bg-emerald-50 w-24 h-24 rounded-full group-hover:scale-110 transition-transform"></div>
             <div class="flex justify-between items-start relative z-10">
                 <div>
-                    <p class="text-sm text-gray-500 font-semibold mb-1">Gizi Baik / Normal</p>
+                    <p class="text-sm text-gray-500 font-semibold mb-1">Status Normal</p>
                     <h3 class="text-4xl font-black text-gray-800"><?= number_format($jml_normal) ?></h3>
                 </div>
                 <div class="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center text-xl shadow-inner"><i class="fa-solid fa-face-smile"></i></div>
@@ -147,8 +146,8 @@ include 'layouts/sidebar.php';
             <div class="absolute -right-4 -top-4 bg-yellow-50 w-24 h-24 rounded-full group-hover:scale-110 transition-transform"></div>
             <div class="flex justify-between items-start relative z-10">
                 <div>
-                    <p class="text-sm text-gray-500 font-semibold mb-1">Gizi Kurang</p>
-                    <h3 class="text-4xl font-black text-gray-800"><?= number_format($jml_kurang) ?></h3>
+                    <p class="text-sm text-gray-500 font-semibold mb-1">Status Stunted</p>
+                    <h3 class="text-4xl font-black text-gray-800"><?= number_format($jml_stunted) ?></h3>
                 </div>
                 <div class="w-12 h-12 bg-yellow-100 text-yellow-600 rounded-xl flex items-center justify-center text-xl shadow-inner"><i class="fa-solid fa-face-meh"></i></div>
             </div>
@@ -158,8 +157,8 @@ include 'layouts/sidebar.php';
             <div class="absolute -right-4 -top-4 bg-red-50 w-24 h-24 rounded-full group-hover:scale-110 transition-transform"></div>
             <div class="flex justify-between items-start relative z-10">
                 <div>
-                    <p class="text-sm text-gray-500 font-semibold mb-1">Gizi Buruk & Stunting</p>
-                    <h3 class="text-4xl font-black text-gray-800"><?= number_format($jml_buruk) ?></h3>
+                    <p class="text-sm text-gray-500 font-semibold mb-1">Severely Stunted</p>
+                    <h3 class="text-4xl font-black text-gray-800"><?= number_format($jml_severely_stunted) ?></h3>
                 </div>
                 <div class="w-12 h-12 bg-red-100 text-red-600 rounded-xl flex items-center justify-center text-xl shadow-inner"><i class="fa-solid fa-face-frown"></i></div>
             </div>
@@ -184,7 +183,7 @@ include 'layouts/sidebar.php';
         <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 gap-4">
             <div>
                 <h3 class="text-lg font-bold text-gray-800">Prevalensi Stunting per Kabupaten/Kota</h3>
-                <p class="text-sm text-gray-500">Persentase balita terindikasi gizi buruk berdasarkan data ril di sistem.</p>
+                <p class="text-sm text-gray-500">Persentase balita terindikasi gizi buruk (Stunted/Severely Stunted) berdasarkan data ril di sistem.</p>
             </div>
             <div class="bg-red-50 text-red-600 px-4 py-2 rounded-xl text-xs font-bold border border-red-100 shadow-sm flex items-center gap-2">
                 <i class="fa-solid fa-chart-line"></i> Live Data Analysis
@@ -213,12 +212,17 @@ include 'layouts/sidebar.php';
                         <tr><td colspan="4" class="text-center py-8 text-gray-400">Belum ada aktivitas pemeriksaan.</td></tr>
                     <?php else: ?>
                         <?php foreach($recent_activities as $ra): 
-                            // Warna Badge
+                            // Warna Badge disesuaikan dengan Istilah Baru
                             $status = strtolower($ra['hasil_klasifikasi']);
-                            $badge = 'bg-emerald-100 text-emerald-700 border-emerald-200';
-                            if (strpos($status, 'kurang') !== false) $badge = 'bg-yellow-100 text-yellow-700 border-yellow-200';
-                            elseif (strpos($status, 'buruk') !== false || strpos($status, 'stunt') !== false) $badge = 'bg-red-100 text-red-700 border-red-200';
-                            elseif (strpos($status, 'lebih') !== false) $badge = 'bg-blue-100 text-blue-700 border-blue-200';
+                            $badge = 'bg-emerald-100 text-emerald-700 border-emerald-200'; // Default Normal
+                            
+                            if (strpos($status, 'severely stunted') !== false || strpos($status, 'buruk') !== false) {
+                                $badge = 'bg-red-100 text-red-700 border-red-200';
+                            } elseif (strpos($status, 'stunted') !== false || strpos($status, 'kurang') !== false) {
+                                $badge = 'bg-yellow-100 text-yellow-700 border-yellow-200';
+                            } elseif (strpos($status, 'tinggi') !== false || strpos($status, 'lebih') !== false) {
+                                $badge = 'bg-blue-100 text-blue-700 border-blue-200';
+                            }
                         ?>
                         <tr class="hover:bg-emerald-50/30 transition">
                             <td class="py-4 px-6 font-medium text-gray-700"><?= date('d M Y', strtotime($ra['tanggal_ukur'])) ?></td>
@@ -245,8 +249,8 @@ include 'layouts/sidebar.php';
 <script>
     // 1. Konfigurasi Donut Chart
     var donutOptions = {
-        series: [<?= $jml_normal ?>, <?= $jml_kurang ?>, <?= $jml_buruk ?>, <?= $jml_lebih ?>],
-        labels: ['Normal / Baik', 'Gizi Kurang', 'Gizi Buruk', 'Gizi Lebih'],
+        series: [<?= $jml_normal ?>, <?= $jml_stunted ?>, <?= $jml_severely_stunted ?>, <?= $jml_tinggi ?>],
+        labels: ['Normal', 'Stunted', 'Severely Stunted', 'Tinggi'],
         chart: {
             type: 'donut',
             height: 320,
@@ -277,7 +281,7 @@ include 'layouts/sidebar.php';
     var barOptions = {
         series: [{
             name: 'Jumlah Balita',
-            data: [<?= $jml_normal ?>, <?= $jml_kurang ?>, <?= $jml_buruk ?>, <?= $jml_lebih ?>]
+            data: [<?= $jml_normal ?>, <?= $jml_stunted ?>, <?= $jml_severely_stunted ?>, <?= $jml_tinggi ?>]
         }],
         chart: {
             type: 'bar',
@@ -299,7 +303,7 @@ include 'layouts/sidebar.php';
         },
         stroke: { show: true, width: 2, colors: ['transparent'] },
         xaxis: {
-            categories: ['Gizi Normal', 'Gizi Kurang', 'Gizi Buruk', 'Gizi Lebih'],
+            categories: ['Normal', 'Stunted', 'Severely Stunted', 'Tinggi'],
             labels: { style: { fontSize: '13px', fontWeight: 600 } }
         },
         yaxis: { title: { text: 'Jumlah Kasus' } },
@@ -345,7 +349,7 @@ include 'layouts/sidebar.php';
         },
         yaxis: { labels: { style: { fontSize: '12px', fontWeight: 500 } } },
         tooltip: {
-            y: { formatter: function (val) { return val + "% Kasus Gizi Buruk/Stunting"; } }
+            y: { formatter: function (val) { return val + "% Kasus Stunting"; } }
         }
     };
     var prevalensiChart = new ApexCharts(document.querySelector("#prevalensiChart"), prevalensiOptions);
